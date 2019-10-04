@@ -1,0 +1,118 @@
+library(kernlab)
+
+data(spam)
+
+which(is.na(spam))
+#look at the dimensions
+dim(spam)
+
+#Here we need to create a test and training set
+#seeting seed for reproducibility 
+
+
+#generating binomial random variables
+set.seed(1211)
+trainIndicator <- rbinom(4601, size = 1, prob = 0.5)
+
+table(trainIndicator)
+
+#here we are assingning 2296 in the training set and 2305 in the test set
+trainSpam = spam[trainIndicator == 1, ]
+testSpam = spam[trainIndicator == 0, ]
+
+dim(trainSpam)
+
+#Exploratory data analysis
+#Check the names of cols
+names(trainSpam)
+
+
+head(trainSpam) #this shows us the %age of the words in the emails
+
+table(trainSpam$type) # checking how many are spans and nonspams
+
+
+#ploting to take a better look at spams
+plot(trainSpam$capitalAve ~ trainSpam$type) # the number of time of capital letters 
+#vs the type
+
+#This shows that capital letters are most often used in spams
+plot(log10(trainSpam$capitalAve + 1) ~ trainSpam$type)
+
+
+#plot for relation between predictors
+#ploting first 4 cols of training set
+plot(log10(trainSpam[,1:4]+1))
+
+
+#performing heirarchical clustering i.e
+#assigning each item to cluster which gives us N clusters
+#each containing one item
+#then finding the most similar pair of clusters and merging them 
+#into a single cluster and recurse
+#during the process we get a Dendrogram
+library(cluster)
+
+hCluster <- hclust(dist(t(trainSpam[, 1:55])))
+plot(hCluster)
+#variables that are very close to each other have similar observations
+#across all the different emails in dendogram
+
+
+#Statistical prediction/modeling
+#taking the 55 variables that correspond to a fraction of time a word , character , number a
+#appeared in the email
+trainSpam$numType <- as.numeric(trainSpam$type) -1
+costFunction <- function(x, y) {sum(x!=(y > 0.5))}
+
+cvError <- rep(NA, 55)
+library(boot)
+library(glmnet)
+#using logestic regression
+#as logestic regression are ecplicitly designed for predicting probabily of 
+#an event , variables can only take a finite set of values usuall 0 or 1
+#lgr finds weights for each variable
+#positive implies variable positively correlated with outcome
+#Negative implies variable negatively correlated with outcome
+
+
+# this for loopgoes all of the 55 variables and fix a predictive that relates wheather an email is 
+#spam or ham to the fraction of times that character appears in the email.
+#i.e frequency of words, characters, numbers will determine our predictive model
+for(i in 1:55) {
+  
+  lmFormula <- as.formula(paste("numType~", names(trainSpam) [i], sep = ""))
+  glmFit <- glm(lmFormula, family = "binomial", data = trainSpam)
+  #calculating the error rate for the predictive model
+  cvError[i] = cv.glm(trainSpam, glmFit, costFunction, 2)$delta[2]
+  
+  
+}
+
+#piciking the model that has the minimum error rate
+which.min(cvError)
+#here that is variable 53
+
+#getting the name of the variable
+names(trainSpam)[which.min(cvError)]
+
+#getting a measure of uncertainty
+#Calculationg predictive values for our model that relates the type of the email
+#to spam or ham/ ac to char dollar
+predictionModel <- glm(numType ~ charDollar, family = "binomial", data = trainSpam)
+#evaluating how well our prediction works in our test set
+predictionTest <- predict(predictionModel, testSpam)
+predictionSpam <- rep("nonspam", dim(testSpam) [1])
+predictionSpam[predictionModel$fitted > 0.5] = "spam"
+
+#table of predicted result vs the results that occured in the 
+# actual test set
+#this table shows us how often we made an error
+table(predictionSpam, testSpam$type)
+
+#calculating error rate
+errorRate <- (131+519)/ (1301+519 + 131 + 499)
+errorRate #we have anerror rate of 26.53% as we
+#have only used one variable
+
+write.csv(predictionTest, file = "prediction.csv")
